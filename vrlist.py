@@ -1,8 +1,12 @@
 import csv
+from io import BytesIO
 import re
 from urllib.parse import urlparse
+import zipfile
 
 import requests
+
+VOTER_FILE_URL = 'https://tax-office.traviscountytx.gov/pages/vrodffcc.php'
 
 
 def screen_transform_report(src, screen, transform=None, report=None):
@@ -65,13 +69,33 @@ def screen_regex_or_pseudorange(src, col, pat):
         return screen_pseudorange(src, col, pat)
 
 
+def uncompress_sole_file(blob):
+    if blob[0] in ('"', 'S'):
+        # CSV or section header
+        return blob
+    with zipfile.ZipFile(BytesIO(blob)) as zf:
+        with zf.open(zf.namelist()[0]) as f:
+            return f.read()
+
+
 def get_csv_from_loc(path_or_url):
     parse_res = urlparse(path_or_url)
     if parse_res.scheme in ('http', 'https'):
+        print('Downloading from the Internet.')
         r = requests.get(path_or_url)
+        blob = uncompress_sole_file(r.content)
+
         # observed because someone has a German mailing address in the database
-        r.encoding = 'iso-8859-1'
-        return csv.DictReader(r.text.splitlines())
+        text = blob.decode('iso-8859-1')
+
+        # The download has a Section 18.009 header;
+        # if it's there, print it and remove it.
+        if text[0] == 'S':
+            print('The file came with the following legal warning:')
+            print(''.join(text.splitlines(True)[0:9]))
+            return csv.DictReader(text.splitlines()[10:])
+
+        return csv.DictReader(text.splitlines())
     else:
         return csv.DictReader(open(path_or_url, encoding='iso-8859-1'))
 
@@ -200,7 +224,7 @@ def select_streets(streets):
 
 
 def obtain_pat():
-    print('Input a range or a regex with slashes.')
+    print('Input a range or a regex with slashes (the regex matches the full number).')
     print('Or just press Enter to use no restrictions.')
     pat = validate_pattern(input())
     while not pat:
@@ -235,7 +259,8 @@ def main():
     print('Welcome to the voter-registration-list generator!')
 
     print('Where should I obtain the voter file? (URL or local file path)')
-    vfile = get_csv_from_loc(input())
+    print('Or, press Enter to download the voter file from its usual location.')
+    vfile = get_csv_from_loc(input() or VOTER_FILE_URL)
     print()
 
     print('Got the voter file. We\'ll check its format in a bit.')
@@ -269,7 +294,7 @@ def main():
         print('Or maybe the list is malformed.')
         return
 
-    print('There are {} registered voters here.'.format(len(precinct_matches)))
+    print('There are {:,d} registered voters in Precinct {}.'.format(len(precinct_matches), precinct))
     print()
 
     precinct_streets = list(precinct_streets)
@@ -298,6 +323,7 @@ def main():
 
     print()
 
+    print('{:,d} voter(s): Precinct {} (selected)'.format(len(voters), precinct))
     for voter in voters:
         print(format_voter(voter))
 
