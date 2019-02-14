@@ -29,6 +29,25 @@ def screen_transform_report(src, screen, transform=None, report=None):
     return rows, uniq
 
 
+def screen_regex(src, col, pat):
+    rows = []
+    prog = re.compile(pat)
+    for row in src:
+        if prog.fullmatch(row[col]):
+            rows.append(row)
+    return row
+
+
+def screen_range(src, col, ranges):
+    rows = []
+    for row in src:
+        for low, high in ranges:
+            if low <= int(row[col]) <= high:
+                rows.append(row)
+                break
+    return row
+
+
 def get_csv_from_loc(path_or_url):
     parse_res = urlparse(path_or_url)
     if parse_res.scheme in ('http', 'https'):
@@ -38,6 +57,45 @@ def get_csv_from_loc(path_or_url):
         return csv.DictReader(r.text.splitlines())
     else:
         return csv.DictReader(open(path_or_url, encoding='iso-8859-1'))
+
+
+def make_pseudonumber_sortable(pseudonumber):
+    # For the normal case (a number), just return the number
+    if pseudonumber.isdigit():
+        return (int(pseudonumber),)
+
+    # Empty string: return 0
+    if not pseudonumber:
+        return (0,)
+
+    # Otherwise, remove any prefix, then return (number, prefix, suffix)
+    # (if it's entirely text, return (0, string))
+    num_idx = 0
+    while num_idx <= len(pseudonumber) and not pseudonumber[num_idx].isdigit():
+        num_idx += 1
+    if num_idx == len(pseudonumber):
+        return (0, pseudonumber)
+    suf_idx = num_idx
+    while suf_idx <= len(pseudonumber) and pseudonumber[suf_idx].isdigit():
+        suf_idx += 1
+
+    pre = pseudonumber[:num_idx]
+    num = pseudonumber[num_idx:suf_idx]
+    suf = pseudonumber[suf_idx:]
+    return (int(num), pre, suf)
+
+
+def parse_ranges(range_string):
+    ret = []
+    components = [rang.split('-') for rang in range_string.split(',')]
+    for rang in components:
+        if len(rang) == 1:
+            ret.append((int(rang[0]), int(rang[0])))
+        elif len(rang) == 2:
+            ret.append((int(rang[0]), int(rang[1])))
+        else:
+            raise ValueError('invalid range specification')
+    return ret
 
 
 def select_streets(streets):
@@ -69,7 +127,7 @@ def select_streets(streets):
             try:
                 qr = int(query)
                 just_checked = False
-                if qr == 0 or abs(qr) >= len(streets):
+                if qr == 0 or abs(qr) > len(streets):
                     print('That street doesn\'t exist.')
                 else:
                     remove = (qr < 0)
