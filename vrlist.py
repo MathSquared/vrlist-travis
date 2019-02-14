@@ -35,6 +35,7 @@ def screen_transform_report(src, screen, transform=None, report=None):
 
 
 def screen_collection(src, cols, possibilities):
+    """Return entries in a list of dicts where a set of fields match one of a set of possible values for those fields."""
     rows = []
     for row in src:
         check = tuple([row[col] for col in cols])
@@ -44,6 +45,7 @@ def screen_collection(src, cols, possibilities):
 
 
 def screen_regex(src, col, pat):
+    """Return entries in a list of dicts where a particular field full-string-matches a regex."""
     rows = []
     prog = re.compile(pat)
     for row in src:
@@ -53,6 +55,11 @@ def screen_regex(src, col, pat):
 
 
 def screen_pseudorange(src, col, ranges):
+    """Return entries in a list of dicts where a particular field satisfies one of a set of ranges.
+
+    The ranges are a list of 2-tuples with an inclusive low and inclusive high.
+    The test for inclusion is based on the first element of the tuple from make_pseudonumber_sortable.
+    """
     rows = []
     for row in src:
         for low, high in ranges:
@@ -70,6 +77,7 @@ def screen_regex_or_pseudorange(src, col, pat):
 
 
 def uncompress_sole_file(blob):
+    """If the given binary blob is a ZIP file, return its sole member, uncompressed."""
     if blob[0] in ('"', 'S'):
         # CSV or section header
         return blob
@@ -101,6 +109,11 @@ def get_csv_from_loc(path_or_url):
 
 
 def make_pseudonumber_sortable(pseudonumber):
+    """For a quantity that may or may not be numeric, return something that is partially numeric.
+
+    The method must always return a tuple containing a number, then zero or more strings.
+    Other parts of the program assume that the first number is the numeric representation of the quantity given.
+    """
     # For the normal case (a number), just return the number
     if pseudonumber.isdigit():
         return (int(pseudonumber),)
@@ -131,6 +144,7 @@ def format_street(pre, name, suf):
 
 
 def parse_ranges(range_string):
+    """Turn ranges (like you specify in a print dialog) into a list of inclusive bounds."""
     ret = []
     components = [rang.split('-') for rang in range_string.split(',')]
     for rang in components:
@@ -144,6 +158,10 @@ def parse_ranges(range_string):
 
 
 def validate_pattern(pattern):
+    """Verify that something is either a regex in slashes or a set of ranges.
+
+    Return the string if a regex, the parse_ranges output if a range, None otherwise.
+    """
     if not pattern:
         return '.*'
 
