@@ -1,4 +1,5 @@
 import csv
+import re
 from urllib.parse import urlparse
 
 import requests
@@ -38,14 +39,21 @@ def screen_regex(src, col, pat):
     return row
 
 
-def screen_range(src, col, ranges):
+def screen_pseudorange(src, col, ranges):
     rows = []
     for row in src:
         for low, high in ranges:
-            if low <= int(row[col]) <= high:
+            if low <= make_pseudonumber_sortable(row[col])[0] <= high:
                 rows.append(row)
                 break
     return row
+
+
+def screen_regex_or_pseudorange(src, col, pat):
+    if len(pat[0]) == 1:
+        return screen_regex(src, col, pat)
+    else:
+        return screen_pseudorange(src, col, ranges)
 
 
 def get_csv_from_loc(path_or_url):
@@ -85,6 +93,10 @@ def make_pseudonumber_sortable(pseudonumber):
     return (int(num), pre, suf)
 
 
+def format_street(pre, name, suf):
+    return '{} {} {}'.format(pre, name.title(), suf.title()).strip()
+
+
 def parse_ranges(range_string):
     ret = []
     components = [rang.split('-') for rang in range_string.split(',')]
@@ -96,6 +108,26 @@ def parse_ranges(range_string):
         else:
             raise ValueError('invalid range specification')
     return ret
+
+
+def validate_pattern(pattern):
+    if not pattern:
+        return '.*'
+
+    # If it's a regex, see if it compiles
+    if pattern[0] == '/' and pattern[-1] == '/' and pattern != '/':
+        try:
+            re.compile(pattern[1:-1])
+            # it's valid!
+            return pattern[1:-1]
+        except re.error:
+            return None
+    else:
+        # It's a range; try and parse it
+        try:
+            return parse_ranges(pattern)
+        except ValueError:
+            return None
 
 
 def select_streets(streets):
@@ -136,13 +168,13 @@ def select_streets(streets):
                     if remove:
                         if res[qr - 1]:
                             res[qr - 1] = False
-                            print('Removed {}. {} {} {}.'.format(qr, *streets[qr - 1]))
+                            print('Removed {}. {}.'.format(qr, format_street(*streets[qr - 1])))
                         else:
                             print('That street is already deselected.')
                     else:
                         if not res[qr - 1]:
                             res[qr - 1] = True
-                            print('Added {}. {} {} {}.'.format(qr, *streets[qr - 1]))
+                            print('Added {}. {}.'.format(qr, format_street(*streets[qr - 1])))
                         else:
                             print('That street is already selected.')
             except ValueError:
@@ -156,6 +188,16 @@ def select_streets(streets):
     if not ret:
         print('You selected no streets, so we\'ll use the whole precinct.')
     return ret
+
+
+def obtain_pat():
+    print('Input a range or a regex with slashes.')
+    print('Or just press Enter to use no restrictions.')
+    pat = validate_pattern(input())
+    while not pat:
+        print('Oops, that doesn\'t look valid. Try again.')
+        pat = validate_pattern(input())
+    return pat
 
 
 def main():
@@ -201,7 +243,20 @@ def main():
 
     precinct_streets = list(precinct_streets)
     precinct_streets.sort(key=lambda street: street[1] + '  ' + street[2] + '  ' + street[0])
-    print(select_streets(precinct_streets))
+    use_streets = select_streets(precinct_streets)
+
+    primary_pat = '.*'  # string is regex (no slashes); list is ranges
+    if len(use_streets) == 1:
+        print('Do you want to use only certain primary numbers on {}?'.format(format_street(*use_streets[0])))
+        primary_pat = obtain_pat()
+
+    unit_pat = '.*'
+    # If it's a single range of a single primary, do we want unit restrictions?
+    if len(primary_pat) == 1 and len(primary_pat[0]) == 2 and primary_pat[0][0] == primary_pat[0][1]:
+        print('Do you want to use only certain units at {} {}?'.format(primary_pat[0][0], format_street(*use_streets[0])))
+        unit_pat = obtain_pat()
+
+    print('Preparing your list.')
 
 
 if __name__ == '__main__':
