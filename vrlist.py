@@ -30,13 +30,22 @@ def screen_transform_report(src, screen, transform=None, report=None):
     return rows, uniq
 
 
+def screen_collection(src, cols, possibilities):
+    rows = []
+    for row in src:
+        check = tuple([row[col] for col in cols])
+        if check in possibilities:
+            rows.append(row)
+    return rows
+
+
 def screen_regex(src, col, pat):
     rows = []
     prog = re.compile(pat)
     for row in src:
         if prog.fullmatch(row[col]):
             rows.append(row)
-    return row
+    return rows
 
 
 def screen_pseudorange(src, col, ranges):
@@ -46,14 +55,14 @@ def screen_pseudorange(src, col, ranges):
             if low <= make_pseudonumber_sortable(row[col])[0] <= high:
                 rows.append(row)
                 break
-    return row
+    return rows
 
 
 def screen_regex_or_pseudorange(src, col, pat):
     if len(pat[0]) == 1:
         return screen_regex(src, col, pat)
     else:
-        return screen_pseudorange(src, col, ranges)
+        return screen_pseudorange(src, col, pat)
 
 
 def get_csv_from_loc(path_or_url):
@@ -79,12 +88,12 @@ def make_pseudonumber_sortable(pseudonumber):
     # Otherwise, remove any prefix, then return (number, prefix, suffix)
     # (if it's entirely text, return (0, string))
     num_idx = 0
-    while num_idx <= len(pseudonumber) and not pseudonumber[num_idx].isdigit():
+    while num_idx < len(pseudonumber) and not pseudonumber[num_idx].isdigit():
         num_idx += 1
     if num_idx == len(pseudonumber):
         return (0, pseudonumber)
     suf_idx = num_idx
-    while suf_idx <= len(pseudonumber) and pseudonumber[suf_idx].isdigit():
+    while suf_idx < len(pseudonumber) and pseudonumber[suf_idx].isdigit():
         suf_idx += 1
 
     pre = pseudonumber[:num_idx]
@@ -200,6 +209,28 @@ def obtain_pat():
     return pat
 
 
+def voter_sort_key(voter):
+    return (
+        voter['address_street_name'],
+        voter['address_street_suffix'],
+        voter['address_street_prefix'],
+        make_pseudonumber_sortable(voter['address_number']),
+        make_pseudonumber_sortable(voter['address_unit']),
+        voter['edr_date'],
+        voter['vuid'],
+    )
+
+
+def format_voter(voter):
+    return '{:>6s} {:40s} #{:6s} {:1s}{:8s} {:40s}'.format(
+        voter['address_number'],
+        format_street(voter['address_street_prefix'], voter['address_street_name'], voter['address_street_suffix']),
+        voter['address_unit'],
+        voter['suspense'],
+        voter['edr_date'],
+        '{}, {} {}'.format(voter['name_last'], voter['name_first'], voter['name_middle']).strip().title())
+
+
 def main():
     print('Welcome to the voter-registration-list generator!')
 
@@ -257,6 +288,18 @@ def main():
         unit_pat = obtain_pat()
 
     print('Preparing your list.')
+
+    street_matches = screen_collection(
+        precinct_matches,
+        ('address_street_prefix', 'address_street_name', 'address_street_suffix'), use_streets)
+    primary_matches = screen_regex_or_pseudorange(street_matches, 'address_number', primary_pat)
+    voters = screen_regex_or_pseudorange(primary_matches, 'address_unit', unit_pat)
+    voters.sort(key=voter_sort_key)
+
+    print()
+
+    for voter in voters:
+        print(format_voter(voter))
 
 
 if __name__ == '__main__':
