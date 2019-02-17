@@ -243,6 +243,7 @@ def select_streets(streets):
     ret = [pair[1] for pair in zip(res, streets) if pair[0]]
     if not ret:
         print('You selected no streets, so we\'ll use the whole precinct.')
+        return streets
     return ret
 
 
