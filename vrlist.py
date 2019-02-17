@@ -493,7 +493,7 @@ def hierarchize_and_latexify_voters(voters):
 def create_report(voters, title, fname):
     latex.build_pdf(make_env(loader=FileSystemLoader('.')).get_template('vrlist-template.tex').render(
         records=hierarchize_and_latexify_voters(voters),
-        num_voters=len(voters),
+        num_voters='{:,d}'.format(len(voters)),
         title=fix_latex_string(title),
     )).save_to(fname)
 
