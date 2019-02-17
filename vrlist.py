@@ -468,16 +468,18 @@ def hierarchize_and_latexify_voters(voters):
             ret[street_fmt] = collections.OrderedDict()
             last_primary = None
             last_unit = None
-        if voter['address_number'] != last_primary:
-            ret[street_fmt][voter['address_number']] = collections.OrderedDict()
+        primary = fix_latex_string(voter['address_number'])
+        if primary != last_primary:
+            ret[street_fmt][primary] = collections.OrderedDict()
             last_unit = None
-        if voter['address_unit'] != last_unit:
-            ret[street_fmt][voter['address_number']][voter['address_unit']] = []
+        unit = fix_latex_string(voter['address_unit'])
+        if unit != last_unit:
+            ret[street_fmt][primary][unit] = []
         last_street_fmt = street_fmt
-        last_primary = voter['address_number']
-        last_unit = voter['address_unit']
+        last_primary = primary
+        last_unit = unit
 
-        ret[street_fmt][voter['address_number']][voter['address_unit']].append({
+        ret[street_fmt][primary][unit].append({
             'vuid': voter['vuid'],
             'edr_str': prettify_yyyymmdd(voter['edr_date']),
             'suspense': voter['suspense'],
