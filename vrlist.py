@@ -1,12 +1,17 @@
+import collections
 import csv
 from io import BytesIO
 import re
 from urllib.parse import urlparse
 import zipfile
 
+from jinja2.loaders import FileSystemLoader
+import latex
+from latex.jinja2 import make_env
 import requests
 
 VOTER_FILE_URL = 'https://tax-office.traviscountytx.gov/pages/vrodffcc.php'
+MONTHS = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'June', 'July', 'Aug.', 'Sept.', 'Oct.', 'Nov.', 'Dec.']
 
 
 def screen_transform_report(src, screen, transform=None, report=None):
@@ -273,6 +278,223 @@ def format_voter(voter):
         '{}, {} {}'.format(voter['name_last'], voter['name_first'], voter['name_middle']).strip().title())
 
 
+def format_pseudorange_or_regex(pat):
+    if len(pat[0]) == 1:
+        return '/{}/'.format(pat)
+
+    return ', '.join(str(comp[0]) if comp[0] == comp[1] else '{}\u2013{}'.format(*comp) for comp in pat)
+
+
+def format_report_title(precinct, streets, num_streets_in_precinct, primary, unit):
+    if len(streets) == num_streets_in_precinct:
+        return 'Precinct {}, full report ({} streets)'.format(precinct, len(streets))
+    elif len(streets) > 1:
+        return 'Precinct {}, {} of {} streets'.format(precinct, len(streets), num_streets_in_precinct)
+    elif primary == '.*':
+        return 'Precinct {}, {}'.format(precinct, format_street(*streets[0]))
+    elif unit == '.*':
+        # Cut down on long titles for ranges with three or more parts
+        if len(primary) > 2 and len(primary[0]) == 2:
+            return 'Precinct {}, portion of {}'.format(precinct, format_street(*streets[0]))
+        else:
+            return 'Precinct {}, {} {}'.format(precinct, format_pseudorange_or_regex(primary), format_street(*streets[0]))
+    else:
+        # Cut down on long titles for ranges with three or more parts
+        if len(unit) > 2 and len(unit[0]) == 2:
+            return 'Precinct {}, {} {} selected units'.format(precinct, format_pseudorange_or_regex(primary), format_street(*streets[0]))
+        else:
+            return 'Precinct {}, {} {} #{}'.format(precinct, format_pseudorange_or_regex(primary), format_street(*streets[0]), format_pseudorange_or_regex(unit))
+
+
+def fix_latex_string(raw):
+    # latex.escape only handles ASCII; this also handles ISO-8859-1 and dashes
+
+    # We want to avoid depending on textcomp or math mode,
+    # so some non-alphabetic characters just can't be represented.
+    def bad_char(legend):
+        return r'\guilsinglleft\textsc{' + legend + '}\guilsinglright{}'
+
+    escapes = {
+        # ASCII metacharacters
+        '#': r'\#',
+        '$': r'\$',
+        '%': r'\%',
+        '&': r'\&',
+        '_': r'\_',
+        '{': r'\{',
+        '}': r'\}',
+        '\\': r'\textbackslash{}',
+        '^': r'\textasciicircum{}',
+        '~': r'\textasciitilde{}',
+        '[': '{[}',
+        ']': '{]}',
+
+        # Quotation marks
+        '`': r'\`{}',
+        '\'': r'\textsc{\char13}',  # https://tex.stackexchange.com/a/172878/120844 and the big list of LaTeX symbols
+        '"': r'\textquotedbl',
+
+        # ISO-8859-1
+        '\xa0': '~',
+        '¡': r'\textexclamdown',
+        '¢': bad_char('cent'),
+        '£': r'\pounds',
+        '¤': bad_char('cur'),
+        '¥': bad_char('yen'),
+        '¦': bad_char('bar'),
+        '§': r'\S{}',
+        '¨': r'\"{}',
+        '©': r'\copyright',
+        'ª': r'\textordfeminine',
+        '«': r'\guillemotleft',
+        '¬': bad_char('not'),
+        '­': r'\-',  # soft hyphen
+        '®': r'\textregistered',
+        '¯': r'\={}',
+        '°': bad_char('deg'),
+        '±': bad_char('pm'),
+        '²': bad_char('sup2'),
+        '³': bad_char('sup3'),
+        '´': r'\'{}',
+        'µ': bad_char('mu'),
+        '¶': r'\P{}',
+        '·': r'\textperiodcentered',
+        '¸': r'\c{}',
+        '¹': bad_char('sup1'),
+        'º': r'\textordmasculine',
+        '»': r'\guillemotright',
+        '¼': bad_char('f14'),
+        '½': bad_char('f12'),
+        '¾': bad_char('f13'),
+        '¿': r'\textquestiondown',
+        'À': r'\`A',
+        'Á': r'\'A',
+        'Â': r'\^A',
+        'Ã': r'\~A',
+        'Ä': r'\"A',
+        'Å': r'\AA{}',
+        'Æ': r'\AE{}',
+        'Ç': r'\c{C}',
+        'È': r'\`E',
+        'É': r'\'E',
+        'Ê': r'\^E',
+        'Ë': r'\"E',
+        'Ì': r'\`I',
+        'Í': r'\'I',
+        'Î': r'\^I',
+        'Ï': r'\"I',
+        'Ð': r'\DH{}',
+        'Ñ': r'\~N',
+        'Ò': r'\`O',
+        'Ó': r'\'O',
+        'Ô': r'\^O',
+        'Õ': r'\~O',
+        'Ö': r'\"O',
+        '×': bad_char('times'),
+        'Ø': r'\O{}',
+        'Ù': r'\`O',
+        'Ú': r'\'O',
+        'Û': r'\^O',
+        'Ü': r'\"O',
+        'Ý': r'\'Y',
+        'Þ': r'\TH{}',
+        'ß': r'\ss{}',
+        'à': r'\`a',
+        'á': r'\'a',
+        'â': r'\^a',
+        'ã': r'\~a',
+        'ä': r'\"a',
+        'å': r'\aa{}',
+        'æ': r'\ae{}',
+        'ç': r'\c{c}',
+        'è': r'\`e',
+        'é': r'\'e',
+        'ê': r'\^e',
+        'ë': r'\"e',
+        'ì': r'\`i',
+        'í': r'\'i',
+        'î': r'\^i',
+        'ï': r'\"i',
+        'ð': r'\dh',
+        'ñ': r'\~n',
+        'ò': r'\`o',
+        'ó': r'\'o',
+        'ô': r'\^o',
+        'õ': r'\~o',
+        'ö': r'\"o',
+        '÷': bad_char('div'),
+        'ø': r'\o{}',
+        'ù': r'\`o',
+        'ú': r'\'o',
+        'û': r'\^o',
+        'ü': r'\"o',
+        'ý': r'\'y',
+        'þ': r'\th{}',
+        'ÿ': r'\"y',
+
+        # Em and en dashes
+        '\u2013': '--',
+        '\u2014': '---',
+    }
+
+    return ''.join((escapes[ch] if ch in escapes else ch) for ch in raw)
+
+
+def prettify_yyyymmdd(yyyymmdd):
+    if len(yyyymmdd) != 8:
+        raise ValueError('Bad length of yyyymmdd date')
+    year = yyyymmdd[0:4]
+    mo_idx = int(yyyymmdd[4:6])
+    day = yyyymmdd[7] if yyyymmdd[6] == '0' else yyyymmdd[6:]
+    return '{} {}\xa0{}'.format(year, MONTHS[mo_idx - 1], day)
+
+
+def hierarchize_and_latexify_voters(voters):
+    if len(voters) == 0:
+        return {}
+
+    # Structure: street, primary, unit, list of dict with vuid;edr_str;suspense;name_given;name_last
+    ret = collections.OrderedDict()
+
+    last_street_fmt = None
+    last_primary = None
+    last_unit = None
+
+    for voter in voters:
+        # This acts goofy if two adjacent streets are formatted the same, but should be fine in practice
+        street_fmt = fix_latex_string(format_street(voter['address_street_prefix'], voter['address_street_name'], voter['address_street_suffix']))
+        if street_fmt != last_street_fmt:
+            ret[street_fmt] = collections.OrderedDict()
+            last_primary = None
+            last_unit = None
+        if voter['address_number'] != last_primary:
+            ret[street_fmt][voter['address_number']] = collections.OrderedDict()
+            last_unit = None
+        if voter['address_unit'] != last_unit:
+            ret[street_fmt][voter['address_number']][voter['address_unit']] = []
+        last_street_fmt = street_fmt
+        last_primary = voter['address_number']
+        last_unit = voter['address_unit']
+
+        ret[street_fmt][voter['address_number']][voter['address_unit']].append({
+            'vuid': voter['vuid'],
+            'edr_str': prettify_yyyymmdd(voter['edr_date']),
+            'suspense': voter['suspense'],
+            'name_given': fix_latex_string('{name_first} {name_middle}'.format(**voter).strip().title()),
+            'name_last': fix_latex_string(voter['name_last'].title()),
+        })
+
+    return ret
+
+
+def create_report(voters, title, fname):
+    latex.build_pdf(make_env(loader=FileSystemLoader('.')).get_template('vrlist-template.tex').render(
+        records=hierarchize_and_latexify_voters(voters),
+        num_voters=len(voters),
+        title=fix_latex_string(title),
+    )).save_to(fname)
+
+
 def main():
     print('Welcome to the voter-registration-list generator!')
 
@@ -344,6 +566,15 @@ def main():
     print('{:,d} voter(s): Precinct {} (selected)'.format(len(voters), precinct))
     for voter in voters:
         print(format_voter(voter))
+
+    print()
+    print('Do you want a PDF version? If so, enter a filename.')
+    save_to = input()
+    if save_to:
+        create_report(voters, format_report_title(precinct, use_streets, len(precinct_streets), primary_pat, unit_pat), save_to)
+        print('Saved.')
+    else:
+        print('All right. Goodbye!')
 
 
 if __name__ == '__main__':

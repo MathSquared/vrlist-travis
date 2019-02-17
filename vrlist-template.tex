@@ -1,0 +1,45 @@
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage{charter}
+\usepackage{fullpage}
+\usepackage[pass]{geometry}
+\usepackage{parskip}
+\usepackage{xtab}  % contents break across pages
+\usepackage{arydshln}  % hdashline
+
+\begin{document}
+
+\textbf{\VAR{title}: \VAR{num_voters} voters}
+
+Notice: Under \textsc{Tex.~Elec.~Code} \S~18.009, it is unlawful to use this information for commercial purposes.
+
+\BLOCK{for street_fmt, primaries in records.items()}
+\textit{\VAR{street_fmt}}
+
+\begin{xtabular}{p{10ex}p{14ex}p{14ex}p{1.5ex}l}
+    \hline
+    \BLOCK{for primary, units in primaries.items()}
+        \BLOCK{for unit, rows in units.items()}
+            \BLOCK{for row in rows}
+                \textit{\scriptsize \VAR{row['vuid']}}
+                &
+                \VAR{primary}\VAR{'.' if unit else ''}\textbf{\VAR{unit}}
+                &
+                \VAR{row['edr_str']}
+                &
+                \textbf{\VAR{row['suspense']}}
+                &
+                \VAR{row['name_given']} \textsc{\VAR{row['name_last']}}
+                \\
+            \BLOCK{endfor}
+            \BLOCK{if not loop.last}
+                \hdashline
+            \BLOCK{endif}
+        \BLOCK{endfor}
+    \hline
+    \BLOCK{endfor}
+\end{xtabular}
+
+\BLOCK{endfor}
+
+\end{document}

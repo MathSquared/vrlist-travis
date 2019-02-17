@@ -1,5 +1,15 @@
 certifi==2018.11.29
 chardet==3.0.4
+data==0.4
+decorator==4.3.2
+funcsigs==1.0.2
+future==0.17.1
 idna==2.8
+Jinja2==2.10
+latex==0.7.0
+MarkupSafe==1.1.0
 requests==2.21.0
+shutilwhich==1.1.0
+six==1.12.0
+tempdir==0.7.1
 urllib3==1.24.1
